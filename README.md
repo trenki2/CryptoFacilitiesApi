@@ -1,7 +1,7 @@
 # CryptoFacilitiesApi
 C# Library to access the CryptoFacilities REST API (https://www.cryptofacilities.com/)
 
-Example code:
+*Example code:*
 
 	CryptoFacilitiesApi api = new CryptoFacilitiesApi(apiKey, apiSecret);
 
@@ -27,4 +27,6 @@ Example code:
 		Console.WriteLine($"{c.Tradeable}\tSpread: {spread}");
 	}
 
-	
+## License
+
+See the [LICENSE](LICENSE.md) file for license rights and limitations (MIT).
