@@ -454,7 +454,7 @@ namespace CryptoFacilities
             var param = new Dictionary<string, string>();
             param["type"] = "LMT";
             param["tradeable"] = tradeable;
-            param["unit"] = "USD";
+            param["unit"] = unit;
             param["dir"] = dir;
             param["qty"] = qty.ToString();
             param["price"] = Convert.ToString(price, CultureInfo.InvariantCulture);
