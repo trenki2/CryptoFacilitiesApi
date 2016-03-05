@@ -614,8 +614,7 @@ namespace CryptoFacilities.Api.V2
 
     public class CryptoFacilitiesApi
     {
-        //private const string endpoint = "https://www.cryptofacilities.com/derivatives";
-        private const string endpoint = "https://176.31.224.165:9090/derivatives";
+        private const string endpoint = "https://www.cryptofacilities.com/derivatives";
 
         private readonly string apiKey;
         private readonly string apiSecret;
