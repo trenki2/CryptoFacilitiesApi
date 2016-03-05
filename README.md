@@ -1,6 +1,8 @@
 # CryptoFacilitiesApi
 C# Library to access the CryptoFacilities REST API (https://www.cryptofacilities.com/)
 
+The code implements API version 1 as well as API version 2.
+
 *Example code:*
 
 	CryptoFacilitiesApi api = new CryptoFacilitiesApi(apiKey, apiSecret);
