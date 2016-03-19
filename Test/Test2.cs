@@ -4,7 +4,7 @@ Copyright(c) 2016 Markus Trenkwalder
 Permission is hereby granted, free of charge, to any person obtaining
 a copy of this software and associated documentation files (the
 "Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish, 
+without limitation the rights to use, copy, modify, merge, publish,
 distribute, sublicense, and/or sell copies of the Software, and to
 permit persons to whom the Software is furnished to do so, subject to
 the following conditions:
@@ -12,11 +12,11 @@ the following conditions:
 The above copyright notice and this permission notice shall be
 included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
@@ -24,6 +24,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 using CryptoFacilities.Api.V2;
 using System;
 using System.Collections.Generic;
+using System.Net;
 
 namespace Test
 {
@@ -31,6 +32,8 @@ namespace Test
     {
         public static void Run()
         {
+            ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+
             string cfKey = "";
             string cfSecret = "";
 
@@ -55,7 +58,7 @@ namespace Test
             Console.WriteLine("Spread: " + spread);
 
             Console.WriteLine("Sending order");
-            SendStatus sendStatus = cf.SendOrder("lmt", instruments[0].Symbol, "sell", 1, 10000.0m);
+            SendStatus sendStatus = cf.SendOrder("lmt", instruments[0].Symbol, "sell", 1, 1000.0m);
 
             Console.WriteLine("Open Orders:");
             List<Order> openOrders = cf.GetOpenOrders();

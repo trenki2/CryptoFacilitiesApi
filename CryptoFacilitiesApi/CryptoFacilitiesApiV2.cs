@@ -28,7 +28,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Globalization;
-using System.IO;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -614,11 +613,12 @@ namespace CryptoFacilities.Api.V2
 
     public class CryptoFacilitiesApi
     {
-        private const string endpoint = "https://www.cryptofacilities.com/derivatives";
+        public string Endpoint { get; set; } = "https://www.cryptofacilities.com/derivatives";
 
         private readonly string apiKey;
         private readonly string apiSecret;
         private readonly int rateLimit;
+        private int lastNonce = 0;
 
         public CryptoFacilitiesApi(string key, string secret, int rateLimit = 500)
         {
@@ -634,35 +634,34 @@ namespace CryptoFacilities.Api.V2
         /// <param name="param">Parameters and their values</param>
         /// <param name="auth">Set to true when authentication is to be used</param>
         /// <returns></returns>
-        public string Query(string path, OrderedDictionary param = null, bool auth = false)
+        public string Query(string path, string method, OrderedDictionary param = null, bool auth = false)
         {
             RateLimit();
 
             string postData = BuildPostData(param);
 
-            string url = endpoint + path;
-            if (postData != "")
+            string url = Endpoint + path;
+            if (method == "GET" && postData != "")
                 url += "?" + postData;
 
-            HttpWebRequest webRequest = (HttpWebRequest)WebRequest.Create(url);
-            webRequest.Method = "POST";
-
-            if (auth)
-                AddHeaders(webRequest, path, postData);
-
-            if (postData != "")
+            using (var webClient = new WebClient())
             {
-                using (var writer = new StreamWriter(webRequest.GetRequestStream()))
+                if (auth)
+                    AddHeaders(webClient, path, postData);
+
+                if (method == "POST")
                 {
-                    writer.Write(postData);
-                }
-            }
+                    var nameValueCollection = new NameValueCollection();
+                    foreach (DictionaryEntry de in param)
+                        nameValueCollection.Add(de.Key.ToString(), de.Value.ToString());
 
-            using (WebResponse webResponse = webRequest.GetResponse())
-            using (Stream str = webResponse.GetResponseStream())
-            using (StreamReader sr = new StreamReader(str))
-            {
-                return sr.ReadToEnd();
+                    byte[] response = webClient.UploadValues(url, "POST", nameValueCollection);
+                    return Encoding.UTF8.GetString(response);
+                }
+                else
+                {
+                    return webClient.DownloadString(url);
+                }
             }
         }
 
@@ -671,7 +670,7 @@ namespace CryptoFacilities.Api.V2
         /// </summary>
         public DateTime GetServerTime()
         {
-            string res = Query("/api/v2/instruments");
+            string res = Query("/api/v2/instruments", "GET");
             var response = JsonConvert.DeserializeObject<GetInstrumentsResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -683,7 +682,7 @@ namespace CryptoFacilities.Api.V2
         /// </summary>
         public List<Instrument> GetInstruments()
         {
-            string res = Query("/api/v2/instruments");
+            string res = Query("/api/v2/instruments", "GET");
             var response = JsonConvert.DeserializeObject<GetInstrumentsResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -695,7 +694,7 @@ namespace CryptoFacilities.Api.V2
         /// </summary>
         public List<Ticker> GetTickers()
         {
-            string res = Query("/api/v2/tickers");
+            string res = Query("/api/v2/tickers", "GET");
             var response = JsonConvert.DeserializeObject<GetTickersResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -711,7 +710,7 @@ namespace CryptoFacilities.Api.V2
             var param = new OrderedDictionary();
             param.Add("symbol", symbol);
 
-            string res = Query("/api/v2/orderbook", param);
+            string res = Query("/api/v2/orderbook", "GET", param);
             var response = JsonConvert.DeserializeObject<GetOrderBookResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -732,7 +731,7 @@ namespace CryptoFacilities.Api.V2
             if (lastTime != null)
                 param.Add("lastTime", lastTime.Value.ToUniversalTime().ToString("o"));
 
-            string res = Query("/api/v2/history", param);
+            string res = Query("/api/v2/history", "GET", param);
             var response = JsonConvert.DeserializeObject<GetHistoryResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -746,7 +745,7 @@ namespace CryptoFacilities.Api.V2
         /// </summary>
         public AccountInfo GetAccountInfo()
         {
-            string res = Query("/api/v2/account", null, true);
+            string res = Query("/api/v2/account", "GET", null, true);
             var response = (JObject)JsonConvert.DeserializeObject(res);
             if (response["result"].ToString() != "success")
                 throw new Exception(response["error"].ToString());
@@ -785,11 +784,84 @@ namespace CryptoFacilities.Api.V2
             if (stopPrice != null)
                 param.Add("stopPrice", Convert.ToString(stopPrice, CultureInfo.InvariantCulture));
 
-            string res = Query("/api/v2/sendorder", param, true);
+            string res = Query("/api/v2/sendorder", "POST", param, true);
             var response = JsonConvert.DeserializeObject<SendOrderResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
             return response.SendStatus;
+        }
+
+        private String signMessage(String endpoint, String nonce, String postData)
+        {
+            // Step 1: concatenate postData, nonce + endpoint
+            var message = postData + nonce + endpoint;
+
+            //Step 2: hash the result of step 1 with SHA256
+            var hash256 = new SHA256Managed();
+            var hash = hash256.ComputeHash(Encoding.UTF8.GetBytes(message));
+
+            //step 3: base64 decode apiPrivateKey
+            var secretDecoded = (System.Convert.FromBase64String(apiSecret));
+
+            //step 4: use result of step 3 to hash the resultof step 2 with HMAC-SHA512
+            var hmacsha512 = new HMACSHA512(secretDecoded);
+            var hash2 = hmacsha512.ComputeHash(hash);
+
+            //step 5: base64 encode the result of step 4 and return
+            return System.Convert.ToBase64String(hash2);
+        }
+
+        public String makeRequest(String requestMethod, String endpoint, String postUrl, String postBody)
+        {
+            using (var client = new WebClient())
+            {
+                var url = this.Endpoint + endpoint + "?" + postUrl;
+
+                string nonce = GetNonce();
+                string postData = postUrl + postBody;
+                string signature = signMessage(endpoint, nonce, postData);
+                client.Headers.Add("APIKey", apiKey);
+                client.Headers.Add("Nonce", nonce);
+                client.Headers.Add("Authent", signature);
+
+                if (requestMethod == "POST")
+                {
+                    NameValueCollection parameters = new NameValueCollection();
+                    String[] bodyArray = postBody.Split('&');
+                    foreach (String pair in bodyArray)
+                    {
+                        String[] splitPair = pair.Split('=');
+                        parameters.Add(splitPair[0], splitPair[1]);
+                    }
+
+                    var response = client.UploadValues(url, "POST", parameters);
+                    return Encoding.UTF8.GetString(response);
+                }
+                else
+                {
+                    return client.DownloadString(url);
+                }
+            }
+        }
+
+        public String sendOrder(String orderType, String symbol, String side, Decimal size, Decimal limitPrice, Decimal stopPrice = 0M)
+        {
+            var endpoint = "/api/v2/sendorder";
+            String postBody;
+            if (orderType.Equals("lmt"))
+            {
+                postBody = String.Format("orderType=lmt&symbol={0}&side={1}&size={2}&limitPrice={3}", symbol, side, size.ToString(CultureInfo.InvariantCulture), limitPrice.ToString(CultureInfo.InvariantCulture));
+            }
+            else if (orderType.Equals("stp"))
+            {
+                postBody = String.Format("orderType=stp&symbol={0}&side={1}&size={2}&limitPrice={3}&stopPrice={4}", symbol, side, size.ToString(CultureInfo.InvariantCulture), limitPrice.ToString(CultureInfo.InvariantCulture), stopPrice.ToString(CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                postBody = String.Empty;
+            }
+
+            return makeRequest("POST", endpoint, String.Empty, postBody);
         }
 
         /// <summary>
@@ -801,7 +873,7 @@ namespace CryptoFacilities.Api.V2
             var param = new OrderedDictionary();
             param.Add("order_id", orderId);
 
-            string res = Query("/api/v2/cancelorder", param, true);
+            string res = Query("/api/v2/cancelorder", "POST", param, true);
             var response = JsonConvert.DeserializeObject<CancelOrderResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -811,7 +883,7 @@ namespace CryptoFacilities.Api.V2
         // This endpoint returns information on all open orders for all Futures contracts.
         public List<Order> GetOpenOrders()
         {
-            string res = Query("/api/v2/openorders", null, true);
+            string res = Query("/api/v2/openorders", "GET", null, true);
             var response = JsonConvert.DeserializeObject<GetOpenOrdersResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -830,7 +902,7 @@ namespace CryptoFacilities.Api.V2
             if (lastFillTime != null)
                 param.Add("lastFillTime", lastFillTime.Value.ToUniversalTime().ToString("o"));
 
-            string res = Query("/api/v2/fills", param, true);
+            string res = Query("/api/v2/fills", "GET", param, true);
             var response = JsonConvert.DeserializeObject<GetFillsResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -846,7 +918,7 @@ namespace CryptoFacilities.Api.V2
         /// </summary>
         public List<Position> GetOpenPositions()
         {
-            string res = Query("/api/v2/openpositions", null, true);
+            string res = Query("/api/v2/openpositions", "GET", null, true);
             var response = JsonConvert.DeserializeObject<GetOpenPositionsResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -861,7 +933,7 @@ namespace CryptoFacilities.Api.V2
         /// Must not have more than 8 decimal places.</param>
         public Withdrawal Withdraw(string targetAddress, decimal amount)
         {
-            string res = Query("/api/v2/withdrawal", null, true);
+            string res = Query("/api/v2/withdrawal", "POST", null, true);
             var response = JsonConvert.DeserializeObject<WithdrawResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -880,7 +952,7 @@ namespace CryptoFacilities.Api.V2
             if (lastTransferTime != null)
                 param.Add("lastTransferTime", lastTransferTime.Value.ToUniversalTime().ToString("o"));
 
-            string res = Query("/api/v2/withdrawal", param, true);
+            string res = Query("/api/v2/withdrawal", "GET", param, true);
             var response = JsonConvert.DeserializeObject<GetTransfersResponse>(res);
             if (response.Result != "success")
                 throw new Exception(response.Error);
@@ -891,14 +963,14 @@ namespace CryptoFacilities.Api.V2
 
         #region Utility methods
 
-        private void AddHeaders(HttpWebRequest webRequest, string endpointPath, string postData)
+        private void AddHeaders(WebClient webClient, string endpointPath, string postData)
         {
-            string nonce = GetNonce().ToString();
+            string nonce = GetNonce();
             string authent = GetAuthent(endpointPath, postData, nonce);
 
-            webRequest.Headers.Add("APIKey", apiKey);
-            webRequest.Headers.Add("Nonce", nonce);
-            webRequest.Headers.Add("Authent", authent);
+            webClient.Headers.Add("APIKey", apiKey);
+            webClient.Headers.Add("Nonce", nonce);
+            webClient.Headers.Add("Authent", authent);
         }
 
         private string GetAuthent(string endpointPath, string postData, string nonce)
@@ -923,9 +995,11 @@ namespace CryptoFacilities.Api.V2
             catch (Exception) { return ""; }
         }
 
-        private long GetNonce()
+        private string GetNonce()
         {
-            return (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
+            lastNonce += 1;
+            long timestamp = (long)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalMilliseconds);
+            return timestamp.ToString() + lastNonce.ToString("D4");
         }
 
         private byte[] sha256_hash(string value)
